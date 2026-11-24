@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Partikel Gestur Tangan</title>
+<style>
+  :root{color-scheme:dark}
+  html,body{margin:0;height:100%;background:#05060c;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;color:#e8ecff}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+  #cam{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:96px;height:128px;object-fit:cover;border-radius:12px;border:1px solid #2a3050;transform:scaleX(-1);opacity:.85;display:none}
+  #status{position:fixed;left:0;right:0;top:calc(14px + env(safe-area-inset-top,0px));text-align:center;font-size:15px;letter-spacing:.02em;pointer-events:none}
+  #guide{position:fixed;left:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));font-size:13px;line-height:1.7;color:#9aa3cf;display:none}
+  #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#05060c;text-align:center;padding:24px}
+  #start h1{margin:0;font-size:26px;font-weight:600}
+  #start p{margin:0;max-width:300px;color:#9aa3cf;font-size:15px;line-height:1.5}
+  button{font:inherit;font-size:17px;font-weight:600;padding:14px 28px;border:0;border-radius:999px;background:#ff7a2f;color:#1a0d02}
+  button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<video id="cam" playsinline muted></video>
+<div id="status"></div>
+<div id="guide">✊ hati<br>☝️ planet<br>✌️ I LOVE YOU<br>🤟 galaksi<br>🖐️ sebar</div>
+<div id="start">
+  <h1>Partikel Gestur Tangan</h1>
+  <p>Arahkan satu tangan ke kamera depan. Ubah jumlah jari untuk mengganti bentuk partikel.</p>
+  <button id="go">Mulai kamera</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const video = document.getElementById('cam'), statusEl = document.getElementById('status');
+let W, H, DPR;
+function resize(){
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  buildShape(current);
+}
+addEventListener('resize', resize);
+
+const N = 2400;
+const P = Array.from({length: N}, () => ({x: Math.random()*innerWidth, y: Math.random()*innerHeight, tx: 0, ty: 0}));
+
+// Bentuk: tiap fungsi mengembalikan titik target (x, y) untuk satu partikel
+const S = Math.min(innerWidth, innerHeight);
+let textPts = [];
+function sampleText(){
+  const o = document.createElement('canvas'); o.width = 400; o.height = 120;
+  const c = o.getContext('2d');
+  c.fillStyle = '#fff'; c.font = '800 64px system-ui,sans-serif';
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText('I LOVE YOU', 200, 62);
+  const d = c.getImageData(0, 0, 400, 120).data; textPts = [];
+  for (let y = 0; y < 120; y += 2) for (let x = 0; x < 400; x += 2)
+    if (d[(y*400 + x)*4 + 3] > 128) textPts.push([x - 200, y - 60]);
+}
+sampleText();
+
+const shapes = {
+  heart: {hue: 350, pt(){
+    const t = Math.random()*Math.PI*2, k = Math.sqrt(Math.random())*0.35 + 0.65;
+    const x = 16*Math.pow(Math.sin(t),3);
+    const y = -(13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t));
+    const s = Math.min(W, H)/38;
+    return [W/2 + x*s*k, H/2 + y*s*k - s*0.5];
+  }},
+  planet: {hue: 28, pt(){
+    const r = Math.min(W, H)*0.2, cx = W/2, cy = H/2;
+    if (Math.random() < 0.6){
+      const a = Math.random()*Math.PI*2, d = r*Math.pow(Math.random(), 0.35);
+      return [cx + Math.cos(a)*d, cy + Math.sin(a)*d];
+    }
+    const a = Math.random()*Math.PI*2, rr = r*(1.5 + Math.random()*0.5), tilt = -0.35;
+    const x = Math.cos(a)*rr, y = Math.sin(a)*rr*0.28;
+    return [cx + x*Math.cos(tilt) - y*Math.sin(tilt), cy + x*Math.sin(tilt) + y*Math.cos(tilt)];
+  }},
+  text: {hue: 195, pt(){
+    const q = textPts[(Math.random()*textPts.length)|0], s = W*0.0023;
+    return [W/2 + q[0]*s*Math.max(1, 400/W*1.6)*0.9 + (Math.random()-.5), H/2 + q[1]*s*Math.max(1, 400/W*1.6)*0.9];
+  }},
+  galaxy: {hue: 270, pt(){
+    const arm = (Math.random()*3|0)*(Math.PI*2/3), d = Math.pow(Math.random(), 0.7);
+    const a = arm + d*5 + (Math.random()-.5)*0.5, r = d*Math.min(W, H)*0.42;
+    return [W/2 + Math.cos(a)*r, H/2 + Math.sin(a)*r*0.8];
+  }},
+  scatter: {hue: 220, pt(){ return [Math.random()*W, Math.random()*H]; }}
+};
+
+let current = 'scatter', hue = 220;
+function buildShape(name){
+  current = name;
+  for (const p of P){ const q = shapes[name].pt(); p.tx = q[0]; p.ty = q[1]; }
+}
+buildShape('scatter');
+
+function frame(){
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(5,6,12,0.28)'; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+  const target = shapes[current].hue;
+  hue += (((target - hue + 540) % 360) - 180) * 0.06;
+  const scatter = current === 'scatter';
+  for (let b = 0; b < 3; b++){
+    ctx.fillStyle = `hsla(${hue},95%,${52 + b*9}%,0.9)`;
+    ctx.beginPath();
+    for (let i = b; i < N; i += 3){
+      const p = P[i];
+      if (scatter){ p.x += (Math.random()-.5)*5; p.y += (Math.random()-.5)*5; }
+      else { p.x += (p.tx - p.x)*0.07 + (Math.random()-.5)*0.6; p.y += (p.ty - p.y)*0.07 + (Math.random()-.5)*0.6; }
+      ctx.rect(p.x, p.y, 2, 2);
+    }
+    ctx.fill();
+  }
+  requestAnimationFrame(frame);
+}
+
+// Hitung jari terangkat (tidak tergantung rotasi tangan)
+const dist = (a, b) => Math.hypot(a.x-b.x, a.y-b.y);
+function countFingers(l){
+  const w = l[0]; let n = 0;
+  for (const [tip, pip] of [[8,6],[12,10],[16,14],[20,18]]) if (dist(l[tip], w) > dist(l[pip], w)*1.15) n++;
+  if (dist(l[4], l[17]) > dist(l[3], l[17])*1.05 && dist(l[4], l[17]) > dist(l[5], l[17])*0.9) n++;
+  return n;
+}
+const byCount = n => n <= 0 ? 'heart' : n === 1 ? 'planet' : n === 2 ? 'text' : n === 3 || n === 4 ? 'galaxy' : 'scatter';
+const labels = {heart:'Hati', planet:'Planet', text:'I LOVE YOU', galaxy:'Galaksi', scatter:'Tangan terbuka'};
+
+let cand = null, candN = 0;
+function onResults(r){
+  const l = r.multiHandLandmarks && r.multiHandLandmarks[0];
+  if (!l){ statusEl.textContent = 'Arahkan tangan ke kamera'; return; }
+  const name = byCount(countFingers(l));
+  statusEl.textContent = labels[name];
+  if (name === cand) candN++; else { cand = name; candN = 1; }
+  if (candN === 4 && name !== current) buildShape(name);
+}
+
+document.getElementById('go').onclick = async () => {
+  const btn = document.getElementById('go');
+  btn.disabled = true; btn.textContent = 'Menyiapkan…';
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Kamera butuh koneksi HTTPS. Buka halaman ini lewat alamat https://');
+    const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'user', width: {ideal: 640}, height: {ideal: 480}}, audio: false});
+    video.srcObject = stream; await video.play();
+    video.style.display = 'block'; document.getElementById('guide').style.display = 'block';
+    const hands = new Hands({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`});
+    hands.setOptions({maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5});
+    hands.onResults(onResults);
+    document.getElementById('start').style.display = 'none';
+    statusEl.textContent = 'Memuat model tangan…';
+    resize(); frame();
+    let busy = false;
+    (async function loop(){
+      if (!busy && video.readyState >= 2){ busy = true; try { await hands.send({image: video}); } catch(e){} busy = false; }
+      requestAnimationFrame(loop);
+    })();
+  } catch (e){
+    btn.disabled = false; btn.textContent = 'Coba lagi';
+    alert('Tidak bisa memulai: ' + e.message);
+  }
+};
+resize();
+</script>
+</body>
+</html>
